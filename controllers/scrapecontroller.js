@@ -1,6 +1,6 @@
 // require all of our models
 var db = require("../models");
-
+var path = require("path");
 // ==========Our scraping tools============= //
 // Axios is a promised-based http library, similar to jQuery's Ajax method
 // It works on the client and on the server
@@ -10,15 +10,53 @@ var cheerio = require("cheerio");
 
 module.exports = function(app) {
 
-  // A GET route for scraping the echoJS website
-  app.get("/scrape", function (req, res) {
+
+
+
+  app.get("/scrape", function(req, res) {
     // First, we grab the body of the html with axios
-    axios.get("http://www.latimes.com/").then(function (response) {
+    axios.get("https://www.nytimes.com/section/world").then(function(response) {
+      // Then, we load that into cheerio and save it to $ for a shorthand selector
+      var $ = cheerio.load(response.data);
+  
+      // Now, we grab every tag, and do the following:
+      $("#stream-panel ol li div div a").each(function(i, element) {
+        // Save an empty result object
+        var result = {};
+  
+        // Add the text and href of every link, and save them as properties of the result object
+        result.title = $(this).children("h2").text();
+        result.link = $(this).attr("href");
+        result.summary = $(this).children("p").text();
+  
+        // Create a new Article using the `result` object built from scraping
+        db.Article.create(result)
+          .then(function(dbArticle) {
+            // View the added result in the console
+            console.log(dbArticle);
+          })
+          .catch(function(err) {
+            // If an error occurred, log it
+            console.log(err);
+          });
+      });
+  
+      // Send a message to the client
+      res.send("Scrape Complete");
+    });
+  });
+
+
+
+  // A GET route for scraping the echoJS website
+  app.get("/scrape", function(req, res) {
+    // First, we grab the body of the html with axios
+    axios.get("http://www.techcrunch.com/").then(function (response) {
       // Then, we load that into cheerio and save it to $ for a shorthand selector
       var $ = cheerio.load(response.data);
 
-      // Now, we grab every h2 within an article tag, and do the following:
-      $("article h3").each(function (i, element) {
+      // Now, we grab every div within an article tag, and do the following:
+      $("article h2, article div, article picture").each(function (i, element) {
         // Save an empty result object
         var result = {};
 
@@ -29,12 +67,17 @@ module.exports = function(app) {
         result.link = $(this)
           .children("a")
           .attr("href");
+        result.summary = $(this)
+          .children("p")
+          .attr("text");
+        result.image = $(this)
+          .children("img")
+          .attr("srcset");
         // Create a new Article using the `result` object built from scraping
         db.Article.create(result)
           .then(function (dbArticle) {
             // View the added result in the console
             console.log(dbArticle);
-            console.log(result);
           })
           .catch(function (err) {
             // If an error occurred, log it
@@ -48,13 +91,15 @@ module.exports = function(app) {
   });
 
   // Route for getting all Articles from the db
-  app.get("/articles", function (req, res) {
+  app.get("/", function (req, res) {
     // Grab every document in the Articles collection
     db.Article.find({})
       .then(function (dbArticle) {
         // If we were able to successfully find Articles, send them back to the client
+        console.log(dbArticle);
         //res.json(dbArticle);
-        res.render("index");
+        res.render("index", { allArticles: dbArticle });
+        
       })
       .catch(function (err) {
         // If an error occurred, send it to the client
@@ -67,7 +112,7 @@ module.exports = function(app) {
     // Using the id passed in the id parameter, prepare a query that finds the matching one in our db...
     db.Article.findOne({ _id: req.params.id })
       // ..and populate all of the notes associated with it
-      .populate("note")
+      .populate("comment")
       .then(function (dbArticle) {
         // If we were able to successfully find an Article with the given id, send it back to the client
         res.json(dbArticle);
